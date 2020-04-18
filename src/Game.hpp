@@ -99,7 +99,7 @@ public:
             RigidBody& rigid = m_world.GetComponent<RigidBody>(player);
             rigid.size = { 12, 12 };
             Player& pl = m_world.GetComponent<Player>(player);
-            pl.hunger = 100;
+            pl.hunger = pl.displayedHunger = 100;
         }
 
         //Create Carrot
@@ -161,6 +161,8 @@ public:
         {
             constexpr auto speed = 64;
             player.hunger = std::max(0.0f, player.hunger - dt * 2);
+            player.displayedHunger = std::max(0.0f, player.displayedHunger - dt * 2);
+            player.displayedHunger += (player.hunger - player.displayedHunger) * dt * 3;
             bool grounded = Physics::IsGrounded(m_level, pos, rigid);
             float moveX = 0;
             float moveY = grounded ? 0 : -16;
@@ -294,7 +296,7 @@ public:
         float playerHunger = 0;
         for (auto [player] : m_world.Iter<Player>())
         {
-            playerHunger = player.hunger;
+            playerHunger = player.displayedHunger;
             break;
         }
         drawer->DrawImage(4, m_cameraSize.y - 4, 8, 8, m_turnipUI);

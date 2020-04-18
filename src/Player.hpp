@@ -4,5 +4,6 @@
 struct Player
 {
     float hunger;
+    float displayedHunger;
     float walkingPart;
 };
