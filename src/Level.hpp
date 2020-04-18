@@ -4,6 +4,7 @@
 #include <array>
 #include <vector>
 #include "Rect.hpp"
+#include <functional>
 
 namespace
 {
@@ -13,7 +14,7 @@ namespace
 class Level
 {
 public:
-    Level(const char* file, tako::PixelArtDrawer* drawer)
+    Level(const char* file, tako::PixelArtDrawer* drawer, std::map<char, std::function<void(int,int)>>& callbackMap)
     {
         auto bitmap = tako::Bitmap::FromFile("/Tileset.png");
         auto tileset = drawer->CreateTexture(bitmap);
@@ -34,28 +35,28 @@ public:
         }
 
         auto levelStr = reinterpret_cast<const char *>(buffer.data());
-        int maxX = 0;
-        int maxY = 0;
-        int x = 0;
-        int y = 0;
         std::vector<char> tileChars;
         tileChars.reserve(bytesRead);
-        for (int i = 0; i < bytesRead; i++)
         {
-            if (levelStr[i] != '\n' && levelStr[i] != '\0')
-            {
-                x++;
-                tileChars.push_back(levelStr[i]);
+            int maxX = 0;
+            int maxY = 0;
+            int x = 0;
+            int y = 0;
+
+            for (int i = 0; i < bytesRead; i++) {
+                if (levelStr[i] != '\n' && levelStr[i] != '\0') {
+                    x++;
+                    tileChars.push_back(levelStr[i]);
+                } else {
+                    maxY++;
+                    maxX = std::max(maxX, x);
+                    x = 0;
+                }
             }
-            else
-            {
-                maxY++;
-                maxX = std::max(maxX, x);
-                x = 0;
-            }
+
+            m_width = maxX;
+            m_height = maxY;
         }
-        m_width = maxX;
-        m_height = maxY;
 
         for (int i = 0; i < tileChars.size(); i++)
         {
@@ -92,6 +93,12 @@ public:
                 case 'G':
                     tile = 11;
                     break;
+            }
+            if (callbackMap.find(tileChars[i]) != callbackMap.end())
+            {
+                int y = m_height - i / m_width;
+                int x = i % m_width;
+                callbackMap[tileChars[i]](x, y);
             }
 
             m_tiles.push_back(tile);
