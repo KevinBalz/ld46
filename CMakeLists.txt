@@ -14,6 +14,8 @@ add_executable(${EXECUTABLE}
         "src/Renderer.hpp"
         "src/Player.hpp"
         "src/Physics.hpp"
+        "src/Level.hpp"
+        "src/Rect.hpp"
 )
 configure_file("src/index.html" "./index.html")
 
