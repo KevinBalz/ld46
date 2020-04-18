@@ -13,6 +13,11 @@ public:
     {
         drawer->SetTargetSize(240, 135);
         drawer->AutoScale();
+        {
+            auto bitmap = tako::Bitmap::FromFile("/Tileset.png");
+            m_tileSet = drawer->CreateTexture(bitmap);
+        }
+        m_tile = drawer->CreateSprite(m_tileSet, 0, 0, 16, 16);
 
         //Create Player
         {
@@ -29,14 +34,15 @@ public:
         }
 
         // Ground
+        for (int i = 0; i < 16; i++)
         {
-            auto ground = m_world.Create<Position, RectangleRenderer>();
+            auto ground = m_world.Create<Position, SpriteRenderer>();
             Position& pos = m_world.GetComponent<Position>(ground);
-            pos.x = 0;
+            pos.x = i * 16 - 16 * 16 / 2;
             pos.y = 0;
-            RectangleRenderer& renderer = m_world.GetComponent<RectangleRenderer>(ground);
-            renderer.size = { 100, 32};
-            renderer.color = { 255, 255, 255, 255 };
+            SpriteRenderer& renderer = m_world.GetComponent<SpriteRenderer>(ground);
+            renderer.size = { 16, 16};
+            renderer.sprite = m_tile;
         }
     }
 
@@ -74,9 +80,15 @@ public:
         {
             drawer->DrawRectangle(pos.x - rect.size.x / 2, pos.y + rect.size.y / 2, rect.size.x, rect.size.y,  rect.color);
         });
+        m_world.IterateComps<Position, SpriteRenderer>([&](Position& pos, SpriteRenderer& sprite)
+        {
+          drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
+        });
     }
 private:
     tako::World m_world;
     tako::Vector2 m_cameraPos;
     tako::Vector2 m_cameraTarget;
+    tako::Texture* m_tileSet;
+    tako::Sprite* m_tile;
 };
