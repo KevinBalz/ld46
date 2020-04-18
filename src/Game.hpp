@@ -9,6 +9,7 @@
 #include <array>
 #include <time.h>
 #include <stdlib.h>
+#include <algorithm>
 
 tako::Vector2 FitMapBound(Rect bounds, tako::Vector2 cameraPos, tako::Vector2 camSize)
 {
@@ -50,6 +51,10 @@ public:
                 m_plantStates[i] = drawer->CreateSprite(plantTex, i * 16, 0, 16, 16);
             }
         }
+        {
+            auto bitmap = tako::Bitmap::FromFile("/TurnipUI.png");
+            m_turnipUI = drawer->CreateTexture(bitmap);
+        }
         std::map<char, std::function<void(int,int)>> levelCallbacks
         {{
             { 'p', [&](int x, int y)
@@ -70,15 +75,20 @@ public:
 
         //Create Player
         {
-            auto player = m_world.Create<Position, RectangleRenderer, RigidBody, Player>();
+            auto bitmap = tako::Bitmap::FromFile("/Player.png");
+            auto playerTex = drawer->CreateTexture(bitmap);
+            m_player = drawer->CreateSprite(playerTex, 0, 0, 12, 12);
+            auto player = m_world.Create<Position, SpriteRenderer, RigidBody, Player>();
             Position& pos = m_world.GetComponent<Position>(player);
             pos.x = 0;
             pos.y = 100;
-            RectangleRenderer& renderer = m_world.GetComponent<RectangleRenderer>(player);
-            renderer.size = { 16, 16};
-            renderer.color = { 255, 255, 255, 255 };
+            SpriteRenderer& renderer = m_world.GetComponent<SpriteRenderer>(player);
+            renderer.size = { 12, 12};
+            renderer.sprite = m_player;
             RigidBody& rigid = m_world.GetComponent<RigidBody>(player);
-            rigid.size = { 16, 16 };
+            rigid.size = { 12, 12 };
+            Player& pl = m_world.GetComponent<Player>(player);
+            pl.hunger = 100;
         }
 
         //Create Carrot
@@ -101,6 +111,7 @@ public:
         m_world.IterateComps<Position, Player, RigidBody>([&](Position& pos, Player& player, RigidBody& rigid)
         {
             constexpr auto speed = 64;
+            player.hunger = std::max(0.0f, player.hunger - dt * 2);
             if (input->GetKey(tako::Key::Left))
             {
                 pos.x -= dt * speed;
@@ -138,6 +149,7 @@ public:
                 if (pickup)
                 {
                     pickup->Reset();
+                    player.hunger = std::min(100.0f, player.hunger + 10);
                 }
             }
         });
@@ -173,8 +185,6 @@ public:
     {
         m_cameraSize = drawer->GetCameraViewSize();
         drawer->Clear();
-        drawer->SetCameraPosition(m_cameraSize/2);
-        drawer->DrawRectangle(5, 5, 32, 8, {255, 255, 255, 255});
         drawer->SetCameraPosition(m_cameraPos);
         m_level->Draw(drawer);
         m_world.IterateComps<Position, RectangleRenderer>([&](Position& pos, RectangleRenderer& rect)
@@ -185,6 +195,18 @@ public:
         {
           drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
         });
+        drawer->SetCameraPosition(m_cameraSize/2);
+        float playerHunger = 0;
+        for (auto [player] : m_world.Iter<Player>())
+        {
+            playerHunger = player.hunger;
+            break;
+        }
+        drawer->DrawImage(4, m_cameraSize.y - 4, 8, 8, m_turnipUI);
+        //drawer->DrawRectangle(4, m_cameraSize.y - 4, 8, 8, {255, 255, 255, 255});
+        drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4, 32, 8, {255, 255, 255, 255});
+        drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5, 30, 6, {0, 0, 0, 255});
+        drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6, 28 * playerHunger / 100, 4, {255, 255, 255, 255});
     }
 private:
     tako::World m_world;
@@ -192,6 +214,8 @@ private:
     tako::Vector2 m_cameraTarget;
     tako::Vector2 m_cameraSize;
     tako::Sprite* m_carrot;
+    tako::Texture* m_turnipUI;
+    tako::Sprite* m_player;
     std::array<tako::Sprite*, 3> m_plantStates;
     Level* m_level;
 };

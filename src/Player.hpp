@@ -3,5 +3,5 @@
 
 struct Player
 {
-
+    float hunger;
 };
