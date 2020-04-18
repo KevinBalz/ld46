@@ -161,16 +161,17 @@ public:
         {
             constexpr auto speed = 64;
             player.hunger = std::max(0.0f, player.hunger - dt * 2);
+            bool grounded = Physics::IsGrounded(m_level, pos, rigid);
             float moveX = 0;
+            float moveY = grounded ? 0 : -16;
             if (input->GetKey(tako::Key::Left))
             {
-                moveX -= dt * speed;
+                moveX -= speed;
             }
             if (input->GetKey(tako::Key::Right))
             {
-                moveX += dt * speed;
+                moveX += speed;
             }
-            pos.x += moveX;
             if (tako::mathf::abs(moveX) > 0)
             {
                 static float spawnInterval = 0.6f;
@@ -194,7 +195,7 @@ public:
             }
             if (input->GetKey(tako::Key::Up))
             {
-                pos.y += dt * speed;
+                moveY += speed;
             }
             if (input->GetKeyDown(tako::Key::Space))
             {
@@ -229,6 +230,8 @@ public:
                     SpawnParticles(pos.AsVec(), 5, -10, 10, 5, 10);
                 }
             }
+
+            Physics::Move(m_world, m_level, pos, rigid, tako::Vector2(moveX, moveY) * dt);
         });
 
         m_world.IterateComps<Plant, SpriteRenderer>([&](Plant& plant, SpriteRenderer& sprite)
@@ -249,7 +252,7 @@ public:
 
         });
 
-        Physics::Step(m_world, m_level, dt);
+        //Physics::Step(m_world, m_level, dt);
         m_world.IterateComps<Position, Particle>([&](Position& pos, Particle& part)
         {
             auto target = pos.AsVec() + part.speed * dt;

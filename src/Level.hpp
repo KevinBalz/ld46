@@ -124,7 +124,7 @@ public:
 
     }
 
-    bool Overlap(Rect rect)
+    std::optional<Rect> Overlap(Rect rect)
     {
         /*
             TL TM TR
@@ -156,12 +156,12 @@ public:
                 r = { tX * 16.0f + 8, tY * 16.0f + 8, 16, 16};
                 if (Rect::Overlap(r, rect))
                 {
-                    return true;
+                    return r;
                 }
             }
         }
 
-        return false;
+        return std::nullopt;
     }
 
     Rect MapBounds()
