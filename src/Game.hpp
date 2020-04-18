@@ -33,6 +33,11 @@ struct Plant
     }
 };
 
+struct Temporary
+{
+    float left;
+};
+
 class Game
 {
 public:
@@ -108,6 +113,26 @@ public:
 
     void Update(tako::Input* input, float dt)
     {
+        static std::vector<tako::Entity> toRemove;
+        for (auto ent : toRemove)
+        {
+            m_world.Delete(ent);
+        }
+        toRemove.clear();
+        m_world.IterateHandle<Temporary>([&](tako::EntityHandle& handle)
+        {
+            Temporary& tmp = m_world.GetComponent<Temporary>(handle.id);
+            tmp.left -= dt;
+            if (tmp.left < 0)
+            {
+                toRemove.push_back(handle.id);
+            }
+        });
+        for (auto ent : toRemove)
+        {
+            m_world.Delete(ent);
+        }
+        toRemove.clear();
         m_world.IterateComps<Position, Player, RigidBody>([&](Position& pos, Player& player, RigidBody& rigid)
         {
             constexpr auto speed = 64;
@@ -143,6 +168,21 @@ public:
                         {
                             pickup = &plant;
                             minDistance = distance;
+
+                            for (int i = 0; i < 5; i++)
+                            {
+                                auto particle = m_world.Create<Position, RectangleRenderer, Temporary, RigidBody>();
+                                auto& pPos = m_world.GetComponent<Position>(particle);
+                                pPos.x = pl.x + (i - 2) * 2;
+                                pPos.y = pl.y - 3;
+                                auto& pRen = m_world.GetComponent<RectangleRenderer>(particle);
+                                pRen.size = { 1, 1 };
+                                pRen.color = { 255, 255, 255, 255};
+                                auto& pTmp = m_world.GetComponent<Temporary>(particle);
+                                pTmp.left = 10;
+                                auto& pRig = m_world.GetComponent<RigidBody>(particle);
+                                pRig.size = { 1, 1 };
+                            }
                         }
                     }
                 }
