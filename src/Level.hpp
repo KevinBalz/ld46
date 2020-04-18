@@ -7,7 +7,7 @@
 
 namespace
 {
-    constexpr auto tilesetTileCount = 9;
+    constexpr auto tilesetTileCount = 12;
 }
 
 class Level
@@ -80,8 +80,17 @@ public:
                 case '>':
                     tile = 6;
                     break;
-                case 'G':
+                case ';':
+                    tile = 7;
+                    break;
+                case '-':
                     tile = 8;
+                    break;
+                case ':':
+                    tile = 9;
+                    break;
+                case 'G':
+                    tile = 11;
                     break;
             }
 

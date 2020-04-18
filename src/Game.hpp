@@ -87,6 +87,8 @@ public:
     {
         m_cameraSize = drawer->GetCameraViewSize();
         drawer->Clear();
+        drawer->SetCameraPosition(m_cameraSize/2);
+        drawer->DrawRectangle(5, 5, 32, 8, {255, 255, 255, 255});
         drawer->SetCameraPosition(m_cameraPos);
         m_level->Draw(drawer);
         m_world.IterateComps<Position, RectangleRenderer>([&](Position& pos, RectangleRenderer& rect)
