@@ -4,6 +4,7 @@
 #include "Position.hpp"
 #include "Renderer.hpp"
 #include "Player.hpp"
+#include "Physics.hpp"
 
 class Game
 {
@@ -15,14 +16,27 @@ public:
 
         //Create Player
         {
-            auto player = m_world.Create<Position, RectangleRenderer, Player>();
+            auto player = m_world.Create<Position, RectangleRenderer, RigidBody, Player>();
             Position& pos = m_world.GetComponent<Position>(player);
             pos.x = 0;
-            pos.y = 0;
+            pos.y = 100;
             RectangleRenderer& renderer = m_world.GetComponent<RectangleRenderer>(player);
             renderer.size = { 16, 16};
             renderer.color = { 255, 255, 255, 255 };
             m_cameraPos = m_cameraTarget = pos.AsVec();
+            RigidBody& rigid = m_world.GetComponent<RigidBody>(player);
+            rigid.size = { 16, 16 };
+        }
+
+        // Ground
+        {
+            auto ground = m_world.Create<Position, RectangleRenderer>();
+            Position& pos = m_world.GetComponent<Position>(ground);
+            pos.x = 0;
+            pos.y = 0;
+            RectangleRenderer& renderer = m_world.GetComponent<RectangleRenderer>(ground);
+            renderer.size = { 100, 32};
+            renderer.color = { 255, 255, 255, 255 };
         }
     }
 
@@ -30,8 +44,6 @@ public:
     {
         m_world.IterateComps<Position, Player>([&](Position& pos, Player& player)
         {
-            m_cameraTarget = pos.AsVec();
-
             if (input->GetKey(tako::Key::Left))
             {
                 pos.x -= dt * 16;
@@ -46,6 +58,11 @@ public:
             }
         });
 
+        Physics::Step(m_world, dt);
+        m_world.IterateComps<Position, Player>([&](Position& pos, Player& player)
+        {
+           m_cameraTarget = pos.AsVec();
+        });
         m_cameraPos += (m_cameraTarget - m_cameraPos) * dt * 2;
     }
 
