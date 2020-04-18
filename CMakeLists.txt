@@ -12,6 +12,7 @@ add_executable(${EXECUTABLE}
         "src/Game.hpp"
         "src/Position.hpp"
         "src/Renderer.hpp"
+        "src/Player.hpp"
 )
 configure_file("src/index.html" "./index.html")
 
