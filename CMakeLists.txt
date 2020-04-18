@@ -9,6 +9,9 @@ include(tako)
 SET(EXECUTABLE ld46)
 add_executable(${EXECUTABLE}
         "src/Main.cpp"
+        "src/Game.hpp"
+        "src/Position.hpp"
+        "src/Renderer.hpp"
 )
 configure_file("src/index.html" "./index.html")
 
