@@ -38,6 +38,11 @@ struct Temporary
     float left;
 };
 
+struct Particle
+{
+    tako::Vector2 speed;
+};
+
 class Game
 {
 public:
@@ -60,11 +65,12 @@ public:
             auto bitmap = tako::Bitmap::FromFile("/TurnipUI.png");
             m_turnipUI = drawer->CreateTexture(bitmap);
         }
+        m_clipStep = new tako::AudioClip("/Step.wav");
+        m_harvest = new tako::AudioClip("/Harvest.wav");
         std::map<char, std::function<void(int,int)>> levelCallbacks
         {{
             { 'p', [&](int x, int y)
             {
-
                 auto plant = m_world.Create<Position, SpriteRenderer, Plant>();
                 Position& pos = m_world.GetComponent<Position>(plant);
                 pos.x = x * 16 + 8;
@@ -111,6 +117,24 @@ public:
         }
     }
 
+    void SpawnParticles(tako::Vector2 origin, int amount, float minX, float maxX, float minY, float maxY)
+    {
+        for (int i = 0; i < amount; i++)
+        {
+            auto particle = m_world.Create<Position, RectangleRenderer, Temporary, Particle>();
+            auto& pPos = m_world.GetComponent<Position>(particle);
+            pPos.x = origin.x;
+            pPos.y = origin.y;
+            auto& pRen = m_world.GetComponent<RectangleRenderer>(particle);
+            pRen.size = { 1, 1 };
+            pRen.color = { 255, 255, 255, 255};
+            auto& pTmp = m_world.GetComponent<Temporary>(particle);
+            pTmp.left = 30 + rand() % 100 / 10.0f;
+            auto& pPar = m_world.GetComponent<Particle>(particle);
+            pPar.speed = tako::Vector2(((float)rand()) / RAND_MAX * (maxX - minX) + minX, ((float)rand()) / RAND_MAX * (maxY - minY) + minY);
+        }
+    }
+
     void Update(tako::Input* input, float dt)
     {
         static std::vector<tako::Entity> toRemove;
@@ -137,13 +161,36 @@ public:
         {
             constexpr auto speed = 64;
             player.hunger = std::max(0.0f, player.hunger - dt * 2);
+            float moveX = 0;
             if (input->GetKey(tako::Key::Left))
             {
-                pos.x -= dt * speed;
+                moveX -= dt * speed;
             }
             if (input->GetKey(tako::Key::Right))
             {
-                pos.x += dt * speed;
+                moveX += dt * speed;
+            }
+            pos.x += moveX;
+            if (tako::mathf::abs(moveX) > 0)
+            {
+                static float spawnInterval = 0.6f;
+                player.walkingPart += dt;
+                if (tako::mathf::abs(player.walkingPart) > spawnInterval)
+                {
+                    tako::Audio::Play(*m_clipStep);
+                    auto sign = tako::mathf::sign(moveX);
+                    SpawnParticles(pos.AsVec() - tako::Vector2(0, 5), 1, -5 * sign, -10 * sign, 10, 20);
+                    player.walkingPart = 0;
+                    spawnInterval = rand() * 1.0f / RAND_MAX * 0.4f + 0.4f;
+                }
+                else if (player.walkingPart < 0)
+                {
+                    player.walkingPart = 0;
+                }
+            }
+            else
+            {
+                player.walkingPart = std::min(0.0f, player.walkingPart - dt / 2);
             }
             if (input->GetKey(tako::Key::Up))
             {
@@ -153,6 +200,7 @@ public:
             {
                 Plant* pickup = nullptr;
                 float minDistance = 999999999;
+                tako::Vector2 pickupPos;
                 Rect p(pos.AsVec(), rigid.size);
                 for (auto [pos, plant] : m_world.Iter<Position, Plant>())
                 {
@@ -168,28 +216,17 @@ public:
                         {
                             pickup = &plant;
                             minDistance = distance;
-
-                            for (int i = 0; i < 5; i++)
-                            {
-                                auto particle = m_world.Create<Position, RectangleRenderer, Temporary, RigidBody>();
-                                auto& pPos = m_world.GetComponent<Position>(particle);
-                                pPos.x = pl.x + (i - 2) * 2;
-                                pPos.y = pl.y - 3;
-                                auto& pRen = m_world.GetComponent<RectangleRenderer>(particle);
-                                pRen.size = { 1, 1 };
-                                pRen.color = { 255, 255, 255, 255};
-                                auto& pTmp = m_world.GetComponent<Temporary>(particle);
-                                pTmp.left = 10;
-                                auto& pRig = m_world.GetComponent<RigidBody>(particle);
-                                pRig.size = { 1, 1 };
-                            }
+                            pickupPos = pl.Position();
                         }
                     }
                 }
                 if (pickup)
                 {
                     pickup->Reset();
+                    tako::Audio::Play(*m_harvest);
+                    SpawnParticles({pickupPos.x, pickupPos.y - 3}, 5, -15, 15, 5, 40);
                     player.hunger = std::min(100.0f, player.hunger + 10);
+                    SpawnParticles(pos.AsVec(), 5, -10, 10, 5, 10);
                 }
             }
         });
@@ -213,6 +250,21 @@ public:
         });
 
         Physics::Step(m_world, m_level, dt);
+        m_world.IterateComps<Position, Particle>([&](Position& pos, Particle& part)
+        {
+            auto target = pos.AsVec() + part.speed * dt;
+            part.speed.y -= dt * 50;
+            Rect tRect(target, {1, 1});
+            if (m_level->Overlap(tRect))
+            {
+                part.speed /= -4;
+            }
+            else
+            {
+                pos.x = target.x;
+                pos.y = target.y;
+            }
+        });
         m_world.IterateComps<Position, Player>([&](Position& pos, Player& player)
         {
            m_cameraTarget = FitMapBound(m_level->MapBounds(), pos.AsVec(), m_cameraSize);
@@ -256,6 +308,8 @@ private:
     tako::Sprite* m_carrot;
     tako::Texture* m_turnipUI;
     tako::Sprite* m_player;
+    tako::AudioClip* m_clipStep;
+    tako::AudioClip* m_harvest;
     std::array<tako::Sprite*, 3> m_plantStates;
     Level* m_level;
 };
