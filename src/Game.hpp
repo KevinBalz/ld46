@@ -115,7 +115,9 @@ public:
         m_font = new tako::Font("/charmap-cellphone.png", 5, 7, 1, 1, 2, 2,
                                 " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]\a_`abcdefghijklmnopqrstuvwxyz{|}~");
         m_textPressAny = CreateText(drawer, m_font, "Press a button to start");
-        m_textTitle = CreateText(drawer, m_font, "Bunny Plague\n\nLorem ipsum dolor...");
+        m_textTitle = CreateText(drawer, m_font, "Bunny Plague");
+        m_textControls = CreateText(drawer, m_font, "WASD - Move/Jump\n L/C - Pickup/Throw\n K/X - Pickup/Eat");
+        m_textCredits = CreateText(drawer, m_font, "Made in 48 hours by Malai\nLudum Dare 46 - Keep it alive");
         {
             auto bitmap = tako::Bitmap::FromFile("/Plant.png");
             auto plantTex = drawer->CreateTexture(bitmap);
@@ -740,8 +742,11 @@ public:
         }
         if (m_gameState == GameState::StartMenu)
         {
+            drawer->SetCameraPosition(m_cameraSize/2);
+            drawer->DrawImage((m_cameraSize.x - m_textTitle.size.x * 2 ) / 2, m_cameraSize.y - 16, m_textTitle.size.x * 2, m_textTitle.size.y * 2, m_textTitle.texture);
+            drawer->DrawImage(4, m_textCredits.size.y + 4, m_textCredits.size.x, m_textCredits.size.y, m_textCredits.texture);
             drawer->SetCameraPosition({0, 0});
-            drawer->DrawImage(-m_textTitle.size.x/2, m_textTitle.size.y/2, m_textTitle.size.x, m_textTitle.size.y, m_textTitle.texture);
+            drawer->DrawImage(-m_textControls.size.x/2, m_textControls.size.y/2, m_textControls.size.x, m_textControls.size.y, m_textControls.texture);
             return;
         }
         if (m_gameState == GameState::Starting)
@@ -838,7 +843,9 @@ private:
     tako::Font* m_font;
     Text m_textPressAny;
     Text m_textTitle;
+    Text m_textControls;
     Text m_textGameOver;
+    Text m_textCredits;
     int m_bitmappedScore = -1;
     int m_score = 0;
     std::array<tako::Sprite*, 3> m_plantStates;
