@@ -11,6 +11,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <algorithm>
+#include <sstream>
 
 tako::Vector2 FitMapBound(Rect bounds, tako::Vector2 cameraPos, tako::Vector2 camSize)
 {
@@ -53,7 +54,7 @@ enum GameState
     StartMenu,
     Starting,
     InGame,
-    EndScreen
+    GameOver
 };
 
 struct Plant
@@ -168,6 +169,10 @@ public:
         m_clipThrow = new tako::AudioClip("/Throw.wav");
         m_clipBroke = new tako::AudioClip("/Broke.wav");
         m_clipMusic = new tako::AudioClip("/music.mp3");
+        m_clipKill = new tako::AudioClip("/Kill.wav");
+        m_clipHurt = new tako::AudioClip("/Hurt.wav");
+        m_clipDeath = new tako::AudioClip("/Death.wav");
+        m_clipJump = new tako::AudioClip("/Jump.wav");
     }
 
     void StartGame()
@@ -304,12 +309,43 @@ public:
             m_world.Delete(ent);
         }
         toRemove.clear();
-        m_world.IterateComps<Position, Player, RigidBody, SpriteRenderer>([&](Position& pos, Player& player, RigidBody& rigid, SpriteRenderer& renderer)
+        m_world.IterateHandle<Position, Player, RigidBody, SpriteRenderer>([&](tako::EntityHandle handle)
         {
+            Position& pos = m_world.GetComponent<Position>(handle.id);
+            Player& player = m_world.GetComponent<Player>(handle.id);
+            RigidBody& rigid = m_world.GetComponent<RigidBody>(handle.id);
+            SpriteRenderer& renderer = m_world.GetComponent<SpriteRenderer>(handle.id);
             constexpr auto speed = 64;
             player.hunger = std::max(0.0f, player.hunger - dt * 2);
             player.displayedHunger = std::max(0.0f, player.displayedHunger - dt * 2);
             player.displayedHunger += (player.hunger - player.displayedHunger) * dt * 3;
+            if (player.hunger <= 0 && player.displayedHunger < 3)
+            {
+                player.displayedHunger = 0;
+                toRemove.push_back(handle.id);
+                SpawnParticles(pos.AsVec(), 64, -20, 20, -10, 50);
+                tako::Audio::Play(*m_clipDeath);
+                if (m_gameState != GameState::GameOver)
+                {
+                    m_gameState = GameState::GameOver;
+                    std::stringstream str;
+                    if (m_score < 25)
+                    {
+                        str << "You weren't able to keep yourself alive!\n"
+                            << "Eat turnips to satisfy your hunger!\n";
+                    }
+                    else
+                    {
+                        str << "You killed many hungry rabbits,\n"
+                            << "but you exhausted out of hunger!\n";
+                    }
+                    str << "Score: " << m_score << "\n"
+                        << "Thanks for playing!\n"
+                        << "Refresh for restart";
+
+                    m_textGameOver = CreateText(m_drawer, m_font, str.str());
+                }
+            }
             bool grounded = Physics::IsGrounded(m_level, pos, rigid);
             player.speed.y = std::max(grounded ? 0 : -160.0f, player.speed.y - dt * 200);
             player.airTime = grounded ? 0 : player.airTime + dt;
@@ -366,6 +402,10 @@ public:
             }
             if (input->GetKey(tako::Key::Up) && player.airTime < 0.3f)
             {
+                if (player.airTime == 0)
+                {
+                    tako::Audio::Play(*m_clipJump);
+                }
                 player.speed.y = 80;
             }
             float moveY = grounded ? std::max(0.0f, player.speed.y) : player.speed.y;
@@ -422,7 +462,7 @@ public:
                 tBody.entity = turnip;
                 m_world.AddComponent<Turnip>(turnip);
                 auto& tTur = m_world.GetComponent<Turnip>(turnip);
-                tTur.speed = { 130 * player.lookDirection, 20 };
+                tTur.speed = { 130 * player.lookDirection, 10 };
                 tako::Audio::Play(*m_clipThrow);
                 player.turnip = std::nullopt;
             }
@@ -491,7 +531,7 @@ public:
                             deleted = true;
                         }
 
-                        tako::Audio::Play(*m_clipBroke);
+                        tako::Audio::Play(*m_clipKill);
                         killed = otherRigid.entity;
                     }
                 }
@@ -518,11 +558,44 @@ public:
             }
         });
 
-        float carrotX;
-        m_world.IterateComps<Position, Carrot>([&](Position& position, Carrot& carrot)
+        static float carrotX = 0;
+        m_world.IterateHandle<Position, Carrot>([&](tako::EntityHandle handle)
         {
+            Position& position = m_world.GetComponent<Position>(handle.id);
+            Carrot& carrot = m_world.GetComponent<Carrot>(handle.id);
             carrotX = position.x;
             carrot.displayHealth += (carrot.health - carrot.displayHealth) * dt * 3;
+            if (carrot.health <= 0 && carrot.displayHealth < 3)
+            {
+                carrot.displayHealth = 0;
+                toRemove.push_back(handle.id);
+                SpawnParticles(position.AsVec(), 64, -20, 20, -10, 50);
+                tako::Audio::Play(*m_clipDeath);
+                if (m_gameState != GameState::GameOver)
+                {
+                    m_gameState = GameState::GameOver;
+                    std::stringstream str;
+                    if (m_score < 25)
+                    {
+                        str << "You weren't able to defend your carrot!\n"
+                            << "Don't let the rabbits reach it!\n";
+                    }
+                    else
+                    {
+                        str << "You killed many hungry rabbits,\n"
+                            << "but keeping it alive is impossible\n";
+                    }
+                    str << "Score: " << m_score << "\n"
+                        << "Thanks for playing!\n"
+                        << "Refresh for restart";
+
+                    m_textGameOver = CreateText(m_drawer, m_font, str.str());
+                }
+            }
+            if (carrot.health > 0)
+            {
+                carrot.health = std::min(100.0f, carrot.health + dt);
+            }
         });
 
         m_world.IterateComps<Position, RigidBody, Enemy, SpriteRenderer>([&](Position& position, RigidBody& rigid, Enemy& enemy, SpriteRenderer& sprite)
@@ -565,6 +638,9 @@ public:
                         toRemove.push_back(rigid.entity);
                         auto& carrot = m_world.GetComponent<Carrot>(otherRigid.entity);
                         carrot.health = std::max(0.0f, carrot.health - rand() * 1.0f / RAND_MAX * 10 - 15);
+                        tako::Audio::Play(*m_clipHurt);
+                        SpawnParticles(position.AsVec(), 15, -enemy.speed.x, -enemy.speed.x * 1.5f, 0, 20);
+
                     }
                 }
             );
@@ -625,6 +701,7 @@ public:
         pos.y = y * 16 + 8;
         auto& renderer = m_world.GetComponent<SpriteRenderer>(enemy);
         renderer.size = { 12, 12};
+        renderer.sprite = m_rabbitJump;
         auto& rigid = m_world.GetComponent<RigidBody>(enemy);
         rigid.size = { 12, 12 };
         rigid.entity = enemy;
@@ -687,34 +764,40 @@ public:
             drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
         });
         drawer->SetCameraPosition(m_cameraSize/2);
-        if (m_scoreText)
-        {
-            drawer->DrawImage(m_cameraSize.x -8 -4, m_cameraSize.y - 3, 8, 8, m_rabbitUI);
-            drawer->DrawImage(m_cameraSize.x -m_scoreSize.x -8 -4 -4, m_cameraSize.y - 4, m_scoreSize.x, m_scoreSize.y, m_scoreText);
-        }
+        if (m_gameState != GameState::GameOver) {
+            if (m_scoreText) {
+                drawer->DrawImage(m_cameraSize.x - 8 - 4, m_cameraSize.y - 3, 8, 8, m_rabbitUI);
+                drawer->DrawImage(m_cameraSize.x - m_scoreSize.x - 8 - 4 - 4, m_cameraSize.y - 4, m_scoreSize.x,
+                                  m_scoreSize.y, m_scoreText);
+            }
 
-        float carrotHealth = 0;
-        for (auto [carrot] : m_world.Iter<Carrot>())
-        {
-            carrotHealth = carrot.displayHealth;
-            break;
-        }
-        drawer->DrawImage(4, m_cameraSize.y - 4, 8, 8, m_hearthUI);
-        drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4, 32, 8, {255, 255, 255, 255});
-        drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5, 30, 6, {0, 0, 0, 255});
-        drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6, 28 * carrotHealth / 100, 4, {255, 255, 255, 255});
+            float carrotHealth = 0;
+            for (auto[carrot] : m_world.Iter<Carrot>()) {
+                carrotHealth = carrot.displayHealth;
+                break;
+            }
+            drawer->DrawImage(4, m_cameraSize.y - 4, 8, 8, m_hearthUI);
+            drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4, 32, 8, {255, 255, 255, 255});
+            drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5, 30, 6, {0, 0, 0, 255});
+            drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6, 28 * carrotHealth / 100, 4, {255, 255, 255, 255});
 
-        float playerHunger = 0;
-        for (auto [player] : m_world.Iter<Player>())
-        {
-            playerHunger = player.displayedHunger;
-            break;
+            float playerHunger = 0;
+            for (auto[player] : m_world.Iter<Player>()) {
+                playerHunger = player.displayedHunger;
+                break;
+            }
+            constexpr auto offY = 10;
+            drawer->DrawImage(4, m_cameraSize.y - 4 - offY, 8, 8, m_turnipUI);
+            drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4 - offY, 32, 8, {255, 255, 255, 255});
+            drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5 - offY, 30, 6, {0, 0, 0, 255});
+            drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6 - offY, 28 * playerHunger / 100, 4, {255, 255, 255, 255});
         }
-        constexpr auto offY = 10;
-        drawer->DrawImage(4, m_cameraSize.y - 4 - offY, 8, 8, m_turnipUI);
-        drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4 - offY, 32, 8, {255, 255, 255, 255});
-        drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5 - offY, 30, 6, {0, 0, 0, 255});
-        drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6 - offY, 28 * playerHunger / 100, 4, {255, 255, 255, 255});
+        else
+        {
+            drawer->DrawRectangle(0, m_cameraSize.y, m_cameraSize.x, m_cameraSize.y, { 0, 0, 0, 160});
+            drawer->SetCameraPosition({0, 0});
+            drawer->DrawImage(-m_textGameOver.size.x/2, m_textGameOver.size.y/2, m_textGameOver.size.x, m_textGameOver.size.y, m_textGameOver.texture);
+        }
     }
 private:
     GameState m_gameState;
@@ -744,13 +827,18 @@ private:
     tako::AudioClip* m_clipEat;
     tako::AudioClip* m_clipThrow;
     tako::AudioClip* m_clipBroke;
+    tako::AudioClip* m_clipKill;
     tako::AudioClip* m_harvest;
     tako::AudioClip* m_clipMusic;
+    tako::AudioClip* m_clipHurt;
+    tako::AudioClip* m_clipDeath;
+    tako::AudioClip* m_clipJump;
     tako::Vector2 m_scoreSize;
     tako::Texture* m_scoreText = nullptr;
     tako::Font* m_font;
     Text m_textPressAny;
     Text m_textTitle;
+    Text m_textGameOver;
     int m_bitmappedScore = -1;
     int m_score = 0;
     std::array<tako::Sprite*, 3> m_plantStates;
