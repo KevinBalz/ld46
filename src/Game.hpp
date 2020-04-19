@@ -6,6 +6,7 @@
 #include "Player.hpp"
 #include "Physics.hpp"
 #include "Level.hpp"
+#include "Font.hpp"
 #include <array>
 #include <time.h>
 #include <stdlib.h>
@@ -79,6 +80,7 @@ class Game
 public:
     void Setup(tako::PixelArtDrawer* drawer)
     {
+        m_font = new tako::Font("/charmap-cellphone.png", 5, 7, 1, 1, 2, 2, " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]\a_`abcdefghijklmnopqrstuvwxyz{|}~");
         srand(time(NULL));
         drawer->SetTargetSize(240, 135);
         drawer->AutoScale();
@@ -100,6 +102,10 @@ public:
         {
             auto bitmap = tako::Bitmap::FromFile("/Hearth.png");
             m_hearthUI = drawer->CreateTexture(bitmap);
+        }
+        {
+            auto bitmap = tako::Bitmap::FromFile("/RabbitUI.png");
+            m_rabbitUI = drawer->CreateTexture(bitmap);
         }
         {
             auto bitmap = tako::Bitmap::FromFile("/Rabbit.png");
@@ -423,6 +429,7 @@ public:
                 auto& dead = m_world.GetComponent<DeadEnemy>(toKill);
                 dead.speed = speed;
                 dead.groundTime = 0;
+                m_score++;
             }
         });
 
@@ -548,6 +555,18 @@ public:
 
     void Draw(tako::PixelArtDrawer* drawer)
     {
+        if (m_bitmappedScore != m_score)
+        {
+            if (m_scoreText)
+            {
+                delete m_scoreText;
+                m_scoreText = nullptr;
+            }
+            auto bitmap = m_font->RenderText(std::to_string(m_score), 1);
+            m_scoreText = drawer->CreateTexture(bitmap);
+            m_scoreSize = tako::Vector2(bitmap.Width(), bitmap.Height());
+            m_bitmappedScore = m_score;
+        }
         m_cameraSize = drawer->GetCameraViewSize();
         drawer->Clear();
         drawer->SetCameraPosition(m_cameraPos);
@@ -565,6 +584,12 @@ public:
             drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
         });
         drawer->SetCameraPosition(m_cameraSize/2);
+        if (m_scoreText)
+        {
+            drawer->DrawImage(m_cameraSize.x -8 -4, m_cameraSize.y - 3, 8, 8, m_rabbitUI);
+            drawer->DrawImage(m_cameraSize.x -m_scoreSize.x -8 -4 -4, m_cameraSize.y - 4, m_scoreSize.x, m_scoreSize.y, m_scoreText);
+        }
+
         float carrotHealth = 0;
         for (auto [carrot] : m_world.Iter<Carrot>())
         {
@@ -596,6 +621,7 @@ private:
     tako::Sprite* m_carrot;
     tako::Texture* m_turnipUI;
     tako::Texture* m_hearthUI;
+    tako::Texture* m_rabbitUI;
     tako::Sprite* m_turnip;
     tako::Sprite* m_player;
     tako::Sprite* m_rabbit;
@@ -609,6 +635,11 @@ private:
     tako::AudioClip* m_clipThrow;
     tako::AudioClip* m_clipBroke;
     tako::AudioClip* m_harvest;
+    tako::Vector2 m_scoreSize;
+    tako::Texture* m_scoreText = nullptr;
+    tako::Font* m_font;
+    int m_bitmappedScore = -1;
+    int m_score = 0;
     std::array<tako::Sprite*, 3> m_plantStates;
     Level* m_level;
 };
