@@ -20,6 +20,8 @@ tako::Vector2 FitMapBound(Rect bounds, tako::Vector2 cameraPos, tako::Vector2 ca
 
     return cameraPos;
 }
+struct Background {};
+struct Foreground {};
 
 struct Plant
 {
@@ -48,6 +50,24 @@ struct Turnip
     tako::Vector2 speed;
 };
 
+struct Enemy
+{
+    tako::Vector2 speed;
+    float groundTime;
+};
+
+struct DeadEnemy
+{
+    tako::Vector2 speed;
+    float groundTime;
+};
+
+struct Spawner
+{
+    int x, y;
+    float duration;
+};
+
 class Game
 {
 public:
@@ -71,6 +91,13 @@ public:
             m_turnipUI = drawer->CreateTexture(bitmap);
             m_turnip = drawer->CreateSprite(m_turnipUI, 0, 0, 8, 8);
         }
+        {
+            auto bitmap = tako::Bitmap::FromFile("/Rabbit.png");
+            auto tex = drawer->CreateTexture(bitmap);
+            m_rabbit = drawer->CreateSprite(tex, 0, 0, 12, 12);
+            m_rabbitJump = drawer->CreateSprite(tex, 12, 0, 12, 12);
+            m_rabbitDead = drawer->CreateSprite(tex, 24, 0, 12, 12);
+        }
         m_clipStep = new tako::AudioClip("/Step.wav");
         m_harvest = new tako::AudioClip("/Harvest.wav");
         m_clipEat = new tako::AudioClip("/Eat.wav");
@@ -80,7 +107,7 @@ public:
         {{
             { 'p', [&](int x, int y)
             {
-                auto plant = m_world.Create<Position, SpriteRenderer, Plant>();
+                auto plant = m_world.Create<Position, SpriteRenderer, Plant, Foreground>();
                 Position& pos = m_world.GetComponent<Position>(plant);
                 pos.x = x * 16 + 8;
                 pos.y = y * 16 + 8;
@@ -95,7 +122,7 @@ public:
                 auto bitmap = tako::Bitmap::FromFile("/Player.png");
                 auto playerTex = drawer->CreateTexture(bitmap);
                 m_player = drawer->CreateSprite(playerTex, 0, 0, 12, 12);
-                auto player = m_world.Create<Position, SpriteRenderer, RigidBody, Player>();
+                auto player = m_world.Create<Position, SpriteRenderer, RigidBody, Player, Foreground>();
                 Position& pos = m_world.GetComponent<Position>(player);
                 pos.x = x * 16 + 8;
                 pos.y = y * 16 + 8;
@@ -111,6 +138,14 @@ public:
                 pl.lookDirection = 1;
                 pl.airTime = 0.0f;
                 pl.speed = {0, 0};
+            }},
+            { 'S', [&](int x, int y)
+            {
+                auto spawn = m_world.Create<Spawner>();
+                auto& sp = m_world.GetComponent<Spawner>(spawn);
+                sp.x = x;
+                sp.y = y;
+                sp.duration = 0;
             }}
         }};
         m_level = new Level("/Level.txt", drawer, levelCallbacks);
@@ -120,7 +155,7 @@ public:
             auto bitmap = tako::Bitmap::FromFile("/Carrot.png");
             auto carTex = drawer->CreateTexture(bitmap);
             auto m_carrot = drawer->CreateSprite(carTex, 0, 0, 16, 32);
-            auto carrot = m_world.Create<Position, SpriteRenderer>();
+            auto carrot = m_world.Create<Position, SpriteRenderer, Background>();
             Position& pos = m_world.GetComponent<Position>(carrot);
             pos.x = 16 * 5 + 8;
             pos.y = 3 * 16;
@@ -254,7 +289,7 @@ public:
                     pickup->Reset();
                     tako::Audio::Play(*m_harvest);
                     SpawnParticles({pickupPos.x, pickupPos.y - 3}, 5, -15, 15, 5, 40);
-                    auto turnip = m_world.Create<Position, SpriteRenderer>();
+                    auto turnip = m_world.Create<Position, SpriteRenderer, Foreground>();
                     auto& tPos = m_world.GetComponent<Position>(turnip);
                     tPos.x = pickupPos.x;
                     tPos.y = pickupPos.y;
@@ -322,6 +357,7 @@ public:
         {
             turnip.speed.y += dt * -30;
             bool deleted = false;
+            std::optional<tako::Entity> killed;
             Physics::Move(m_world, m_level, position, rigid, turnip.speed * dt,
                 [&]()
                 {
@@ -334,11 +370,16 @@ public:
                 },
                 [&](auto& otherRigid, auto& movement)
                 {
-                    if (!deleted && !m_world.HasComponent<Player>(otherRigid.entity))
+                    if (!killed && m_world.HasComponent<Enemy>(otherRigid.entity))
                     {
-                        toRemove.push_back(rigid.entity);
+                        if (!deleted)
+                        {
+                            toRemove.push_back(rigid.entity);
+                            deleted = true;
+                        }
+
                         tako::Audio::Play(*m_clipBroke);
-                        deleted = true;
+                        killed = otherRigid.entity;
                     }
                 }
             );
@@ -346,8 +387,68 @@ public:
             {
                 SpawnParticles(position.AsVec(), 8, turnip.speed.x * 0.5f, turnip.speed.x * 2, turnip.speed.y * 0.5f, turnip.speed.y * 2);
             }
+            if (killed)
+            {
+                auto toKill = killed.value();
+                auto speed = m_world.GetComponent<Enemy>(toKill).speed;
+                m_world.RemoveComponent<Enemy>(toKill);
+                m_world.RemoveComponent<RigidBody>(toKill);
+                m_world.GetComponent<SpriteRenderer>(toKill).sprite = m_rabbitDead;
+                m_world.AddComponent<DeadEnemy>(toKill);
+                m_world.AddComponent<Background>(toKill);
+                m_world.RemoveComponent<Foreground>(toKill);
+                auto& dead = m_world.GetComponent<DeadEnemy>(toKill);
+                dead.speed = speed;
+                dead.groundTime = 0;
+            }
         });
 
+        m_world.IterateComps<Position, RigidBody, Enemy, SpriteRenderer>([&](Position& position, RigidBody& rigid, Enemy& enemy, SpriteRenderer& sprite)
+        {
+            auto grounded = Physics::IsGrounded(m_level, position, rigid);
+            if (grounded)
+            {
+                sprite.sprite = m_rabbit;
+                if (enemy.groundTime == 0)
+                {
+                    SpawnParticles(position.AsVec() - tako::Vector2(0.0f, rigid.size.y / 2), 5, -7, 7, 40, 60);
+                }
+                enemy.groundTime += dt;
+                enemy.speed = { 0, 0 };
+                if (enemy.groundTime > 2)
+                {
+                    Physics::Move(m_world, m_level, position, rigid, {0, 0.5f });
+                    enemy.speed = { 30, rand() % 20 + 20.0f };
+                    auto speedSign = -tako::mathf::sign(enemy.speed.x);
+                    enemy.groundTime = 0;
+                    SpawnParticles(position.AsVec() - tako::Vector2(0.0f, rigid.size.y / 2), 5, 5 * speedSign, 10 * speedSign, 10, 30);
+                }
+            }
+            else
+            {
+                sprite.sprite = m_rabbitJump;
+                enemy.groundTime = 0;
+                enemy.speed.y -= dt * 20;
+            }
+
+            Physics::Move(m_world, m_level, position, rigid, enemy.speed * dt);
+        });
+
+        m_world.IterateComps<Position, DeadEnemy>([&](Position& pos, DeadEnemy& enm)
+        {
+            auto target = pos.AsVec() + enm.speed * dt;
+            enm.speed.y -= dt * 80;
+            Rect tRect(target, {12, 12});
+            if (m_level->Overlap(tRect))
+            {
+                enm.speed /= -4;
+            }
+            else
+            {
+                pos.x = target.x;
+                pos.y = target.y;
+            }
+        });
         m_world.IterateComps<Position, Particle>([&](Position& pos, Particle& part)
         {
             auto target = pos.AsVec() + part.speed * dt;
@@ -363,12 +464,38 @@ public:
                 pos.y = target.y;
             }
         });
+        m_world.IterateComps<Spawner>([&](Spawner& spawn)
+        {
+            spawn.duration -= dt;
+            if (spawn.duration <= 0)
+            {
+                SpawnRabbit(spawn.x, spawn.y);
+                spawn.duration = rand() * 1.0f / RAND_MAX * 2 + 4;
+            }
+        });
         m_world.IterateComps<Position, Player>([&](Position& pos, Player& player)
         {
            m_cameraTarget = FitMapBound(m_level->MapBounds(), pos.AsVec(), m_cameraSize);
         });
         m_cameraPos += (m_cameraTarget - m_cameraPos) * dt * 2;
         m_cameraPos = FitMapBound(m_level->MapBounds(), m_cameraPos, m_cameraSize);
+    }
+
+    void SpawnRabbit(int x, int y)
+    {
+        auto enemy = m_world.Create<Position, SpriteRenderer, RigidBody, Enemy, Foreground>();
+        auto& pos = m_world.GetComponent<Position>(enemy);
+        pos.x = x * 16 + 8;
+        pos.y = y * 16 + 8;
+        auto& renderer = m_world.GetComponent<SpriteRenderer>(enemy);
+        renderer.size = { 12, 12};
+        renderer.sprite = m_rabbit;
+        auto& rigid = m_world.GetComponent<RigidBody>(enemy);
+        rigid.size = { 12, 12 };
+        rigid.entity = enemy;
+        auto& en = m_world.GetComponent<Enemy>(enemy);
+        en.speed = {0, 0};
+        en.groundTime = 0;
     }
 
     void Draw(tako::PixelArtDrawer* drawer)
@@ -381,9 +508,13 @@ public:
         {
             drawer->DrawRectangle(pos.x - rect.size.x / 2, pos.y + rect.size.y / 2, rect.size.x, rect.size.y,  rect.color);
         });
-        m_world.IterateComps<Position, SpriteRenderer>([&](Position& pos, SpriteRenderer& sprite)
+        m_world.IterateComps<Position, SpriteRenderer, Background>([&](Position& pos, SpriteRenderer& sprite, Background& b)
         {
-          drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
+            drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
+        });
+        m_world.IterateComps<Position, SpriteRenderer, Foreground>([&](Position& pos, SpriteRenderer& sprite, Foreground& f)
+        {
+            drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
         });
         drawer->SetCameraPosition(m_cameraSize/2);
         float playerHunger = 0;
@@ -406,6 +537,9 @@ private:
     tako::Texture* m_turnipUI;
     tako::Sprite* m_turnip;
     tako::Sprite* m_player;
+    tako::Sprite* m_rabbit;
+    tako::Sprite* m_rabbitJump;
+    tako::Sprite* m_rabbitDead;
     tako::AudioClip* m_clipStep;
     tako::AudioClip* m_clipEat;
     tako::AudioClip* m_clipThrow;
