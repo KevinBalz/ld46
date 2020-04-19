@@ -8,7 +8,7 @@
 
 namespace
 {
-    constexpr auto tilesetTileCount = 12;
+    constexpr auto tilesetTileCount = 15;
 }
 
 class Level
@@ -90,8 +90,17 @@ public:
                 case ':':
                     tile = 9;
                     break;
-                case 'G':
+                case '(':
+                    tile = 10;
+                    break;
+                case '_':
                     tile = 11;
+                    break;
+                case ')':
+                    tile = 12;
+                    break;
+                case 'G':
+                    tile = 14;
                     break;
             }
             if (callbackMap.find(tileChars[i]) != callbackMap.end())

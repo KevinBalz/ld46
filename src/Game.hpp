@@ -89,30 +89,31 @@ public:
                 Plant& pl = m_world.GetComponent<Plant>(plant);
                 pl.Reset();
                 pl.growth = 0;
+            }},
+            { 'P', [&](int x, int y)
+            {
+                auto bitmap = tako::Bitmap::FromFile("/Player.png");
+                auto playerTex = drawer->CreateTexture(bitmap);
+                m_player = drawer->CreateSprite(playerTex, 0, 0, 12, 12);
+                auto player = m_world.Create<Position, SpriteRenderer, RigidBody, Player>();
+                Position& pos = m_world.GetComponent<Position>(player);
+                pos.x = x * 16 + 8;
+                pos.y = y * 16 + 8;
+                SpriteRenderer& renderer = m_world.GetComponent<SpriteRenderer>(player);
+                renderer.size = { 12, 12};
+                renderer.sprite = m_player;
+                RigidBody& rigid = m_world.GetComponent<RigidBody>(player);
+                rigid.size = { 12, 12 };
+                rigid.entity = player;
+                Player& pl = m_world.GetComponent<Player>(player);
+                pl.hunger = pl.displayedHunger = 100;
+                pl.turnip = std::nullopt;
+                pl.lookDirection = 1;
+                pl.airTime = 0.0f;
+                pl.speed = {0, 0};
             }}
         }};
         m_level = new Level("/Level.txt", drawer, levelCallbacks);
-
-        //Create Player
-        {
-            auto bitmap = tako::Bitmap::FromFile("/Player.png");
-            auto playerTex = drawer->CreateTexture(bitmap);
-            m_player = drawer->CreateSprite(playerTex, 0, 0, 12, 12);
-            auto player = m_world.Create<Position, SpriteRenderer, RigidBody, Player>();
-            Position& pos = m_world.GetComponent<Position>(player);
-            pos.x = 0;
-            pos.y = 100;
-            SpriteRenderer& renderer = m_world.GetComponent<SpriteRenderer>(player);
-            renderer.size = { 12, 12};
-            renderer.sprite = m_player;
-            RigidBody& rigid = m_world.GetComponent<RigidBody>(player);
-            rigid.size = { 12, 12 };
-            rigid.entity = player;
-            Player& pl = m_world.GetComponent<Player>(player);
-            pl.hunger = pl.displayedHunger = 100;
-            pl.turnip = std::nullopt;
-            pl.lookDirection = 1;
-        }
 
         //Create Carrot
         {
@@ -176,8 +177,9 @@ public:
             player.displayedHunger = std::max(0.0f, player.displayedHunger - dt * 2);
             player.displayedHunger += (player.hunger - player.displayedHunger) * dt * 3;
             bool grounded = Physics::IsGrounded(m_level, pos, rigid);
+            player.speed.y = std::max(grounded ? 0 : -160.0f, player.speed.y - dt * 200);
+            player.airTime = grounded ? 0 : player.airTime + dt;
             float moveX = 0;
-            float moveY = grounded ? 0 : -16;
             if (input->GetKey(tako::Key::Left))
             {
                 moveX -= speed;
@@ -186,18 +188,23 @@ public:
             {
                 moveX += speed;
             }
-            if (tako::mathf::abs(moveX) > 0)
+            constexpr auto acceleration = 0.2f;
+            player.speed.x = moveX = acceleration * moveX + (1 - acceleration) * player.speed.x;
+            if (tako::mathf::abs(moveX) > 1)
             {
                 player.lookDirection = tako::mathf::sign(moveX);
-                static float spawnInterval = 0.6f;
-                player.walkingPart += dt;
-                if (tako::mathf::abs(player.walkingPart) > spawnInterval)
+                if (grounded)
                 {
-                    tako::Audio::Play(*m_clipStep);
-                    auto sign = tako::mathf::sign(moveX);
-                    SpawnParticles(pos.AsVec() - tako::Vector2(0, 5), 1, -5 * sign, -10 * sign, 10, 20);
-                    player.walkingPart = 0;
-                    spawnInterval = rand() * 1.0f / RAND_MAX * 0.4f + 0.4f;
+                    static float spawnInterval = 0.6f;
+                    player.walkingPart += dt;
+                    if (tako::mathf::abs(player.walkingPart) > spawnInterval)
+                    {
+                        tako::Audio::Play(*m_clipStep);
+                        auto sign = tako::mathf::sign(moveX);
+                        SpawnParticles(pos.AsVec() - tako::Vector2(0, 5), 1, -5 * sign, -10 * sign, 10, 20);
+                        player.walkingPart = 0;
+                        spawnInterval = rand() * 1.0f / RAND_MAX * 0.4f + 0.4f;
+                    }
                 }
                 else if (player.walkingPart < 0)
                 {
@@ -208,10 +215,11 @@ public:
             {
                 player.walkingPart = std::min(0.0f, player.walkingPart - dt / 2);
             }
-            if (input->GetKey(tako::Key::Up))
+            if (input->GetKey(tako::Key::Up) && player.airTime < 0.3f)
             {
-                moveY += speed;
+                player.speed.y = 80;
             }
+            float moveY = grounded ? std::max(0.0f, player.speed.y) : player.speed.y;
             bool hadTurnip = player.turnip.has_value();
             bool throwPressed = input->GetKeyDown(tako::Key::Space);
             bool eatPressed = input->GetKeyDown(tako::Key::Down);
@@ -265,14 +273,14 @@ public:
                 tBody.entity = turnip;
                 m_world.AddComponent<Turnip>(turnip);
                 auto& tTur = m_world.GetComponent<Turnip>(turnip);
-                tTur.speed = { 90 * player.lookDirection, 20 };
+                tTur.speed = { 130 * player.lookDirection, 20 };
                 tako::Audio::Play(*m_clipThrow);
                 player.turnip = std::nullopt;
             }
             if (hadTurnip && eatPressed)
             {
                 auto turnip = player.turnip.value();
-                player.hunger = std::min(100.0f, player.hunger + 10);
+                player.hunger = std::min(100.0f, player.hunger + 20);
                 SpawnParticles(m_world.GetComponent<Position>(turnip).AsVec(), 5, -10, 10, 5, 10);
                 toRemove.push_back(turnip);
                 tako::Audio::Play(*m_clipEat);
