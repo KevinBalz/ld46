@@ -350,11 +350,11 @@ public:
             player.speed.y = std::max(grounded ? 0 : -160.0f, player.speed.y - dt * 200);
             player.airTime = grounded ? 0 : player.airTime + dt;
             float moveX = 0;
-            if (input->GetKey(tako::Key::Left))
+            if (input->GetKey(tako::Key::Left) || input->GetKey(tako::Key::A) || input->GetKey(tako::Key::Gamepad_Dpad_Left))
             {
                 moveX -= speed;
             }
-            if (input->GetKey(tako::Key::Right))
+            if (input->GetKey(tako::Key::Right) || input->GetKey(tako::Key::D) || input->GetKey(tako::Key::Gamepad_Dpad_Right))
             {
                 moveX += speed;
             }
@@ -400,7 +400,7 @@ public:
             {
                 renderer.sprite = m_playerJump;
             }
-            if (input->GetKey(tako::Key::Up) && player.airTime < 0.3f)
+            if (player.airTime < 0.3f && (input->GetKey(tako::Key::Up) || input->GetKey(tako::Key::W) || input->GetKey(tako::Key::Space) || input->GetKey(tako::Key::Gamepad_A)))
             {
                 if (player.airTime == 0)
                 {
@@ -410,8 +410,8 @@ public:
             }
             float moveY = grounded ? std::max(0.0f, player.speed.y) : player.speed.y;
             bool hadTurnip = player.turnip.has_value();
-            bool throwPressed = input->GetKeyDown(tako::Key::Space);
-            bool eatPressed = input->GetKeyDown(tako::Key::Down);
+            bool throwPressed = input->GetKeyDown(tako::Key::L) || input->GetKeyDown(tako::Key::C) || input->GetKeyDown(tako::Key::Gamepad_B);
+            bool eatPressed = input->GetKeyDown(tako::Key::K) || input->GetKeyDown(tako::Key::X) || input->GetKeyDown(tako::Key::Gamepad_X);
             if (!hadTurnip && (throwPressed || eatPressed))
             {
                 Plant* pickup = nullptr;
