@@ -154,7 +154,13 @@ public:
         {
             auto bitmap = tako::Bitmap::FromFile("/Player.png");
             auto playerTex = drawer->CreateTexture(bitmap);
+            m_playerJump = drawer->CreateSprite(playerTex, 36, 0, 12, 12);
             m_player = drawer->CreateSprite(playerTex, 0, 0, 12, 12);
+            m_playerWalk1 = drawer->CreateSprite(playerTex, 12, 0, 12, 12);
+            m_playerWalk2 = drawer->CreateSprite(playerTex, 24, 0, 12, 12);
+            m_playerR = drawer->CreateSprite(playerTex, 12, 0, -12, 12);
+            m_playerWalk1R = drawer->CreateSprite(playerTex, 24, 0, -12, 12);
+            m_playerWalk2R = drawer->CreateSprite(playerTex, 36, 0, -12, 12);
         }
         m_clipStep = new tako::AudioClip("/Step.wav");
         m_harvest = new tako::AudioClip("/Harvest.wav");
@@ -298,7 +304,7 @@ public:
             m_world.Delete(ent);
         }
         toRemove.clear();
-        m_world.IterateComps<Position, Player, RigidBody>([&](Position& pos, Player& player, RigidBody& rigid)
+        m_world.IterateComps<Position, Player, RigidBody, SpriteRenderer>([&](Position& pos, Player& player, RigidBody& rigid, SpriteRenderer& renderer)
         {
             constexpr auto speed = 64;
             player.hunger = std::max(0.0f, player.hunger - dt * 2);
@@ -317,14 +323,18 @@ public:
                 moveX += speed;
             }
             constexpr auto acceleration = 0.2f;
-            player.speed.x = moveX = acceleration * moveX + (1 - acceleration) * player.speed.x;
-            if (tako::mathf::abs(moveX) > 1)
+            if (moveX != 0)
             {
                 player.lookDirection = tako::mathf::sign(moveX);
+            }
+            player.speed.x = moveX = acceleration * moveX + (1 - acceleration) * player.speed.x;
+            if (tako::mathf::abs(moveX) > 3)
+            {
                 if (grounded)
                 {
                     static float spawnInterval = 0.6f;
                     player.walkingPart += dt;
+                    player.stepPart += dt;
                     if (tako::mathf::abs(player.walkingPart) > spawnInterval)
                     {
                         tako::Audio::Play(*m_clipStep);
@@ -333,6 +343,12 @@ public:
                         player.walkingPart = 0;
                         spawnInterval = rand() * 1.0f / RAND_MAX * 0.4f + 0.4f;
                     }
+                    if (player.stepPart > 0.1f)
+                    {
+                        player.stepPart -= 0.1f;
+                        player.stepIndex = !player.stepIndex;
+                    }
+                    renderer.sprite = player.lookDirection > 0 ? (player.stepIndex ? m_playerWalk2R : m_playerWalk1R) : (player.stepIndex ? m_playerWalk2 : m_playerWalk1);
                 }
                 else if (player.walkingPart < 0)
                 {
@@ -342,6 +358,11 @@ public:
             else
             {
                 player.walkingPart = std::min(0.0f, player.walkingPart - dt / 2);
+                renderer.sprite = player.lookDirection > 0 ? m_playerR : m_player;
+            }
+            if (!grounded)
+            {
+                renderer.sprite = m_playerJump;
             }
             if (input->GetKey(tako::Key::Up) && player.airTime < 0.3f)
             {
@@ -706,7 +727,13 @@ private:
     tako::Texture* m_hearthUI;
     tako::Texture* m_rabbitUI;
     tako::Sprite* m_turnip;
+    tako::Sprite* m_playerJump;
     tako::Sprite* m_player;
+    tako::Sprite* m_playerWalk1;
+    tako::Sprite* m_playerWalk2;
+    tako::Sprite* m_playerR;
+    tako::Sprite* m_playerWalk1R;
+    tako::Sprite* m_playerWalk2R;
     tako::Sprite* m_rabbit;
     tako::Sprite* m_rabbitJump;
     tako::Sprite* m_rabbitDead;

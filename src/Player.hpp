@@ -9,6 +9,8 @@ struct Player
     float hunger;
     float displayedHunger;
     float walkingPart;
+    float stepPart;
+    bool stepIndex;
     float lookDirection;
     float airTime;
     std::optional<tako::Entity> turnip;
