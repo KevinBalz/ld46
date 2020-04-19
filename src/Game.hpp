@@ -615,7 +615,7 @@ public:
                 if (enemy.groundTime > 2)
                 {
                     Physics::Move(m_world, m_level, position, rigid, {0, 0.5f });
-                    enemy.speed = { 30 * tako::mathf::sign(carrotX - position.x), rand() % 20 + 20.0f };
+                    enemy.speed = { 30 * tako::mathf::sign(carrotX - position.x), rand() % 30 + 20.0f };
                     enemy.direction = tako::mathf::sign(enemy.speed.x);
                     auto speedSign = -tako::mathf::sign(enemy.speed.x);
                     enemy.groundTime = 0;
@@ -684,7 +684,7 @@ public:
             if (spawn.duration <= 0)
             {
                 SpawnRabbit(spawn.x, spawn.y);
-                spawn.duration = rand() * 1.0f / RAND_MAX * 2 + 4;
+                spawn.duration = rand() * 1.0f / RAND_MAX * 2 + 10 / (1 + m_score / 25.0f);
             }
         });
         m_world.IterateComps<Position, Player>([&](Position& pos, Player& player)
