@@ -21,12 +21,39 @@ tako::Vector2 FitMapBound(Rect bounds, tako::Vector2 cameraPos, tako::Vector2 ca
 
     return cameraPos;
 }
+
+struct Text
+{
+    tako::Texture* texture;
+    tako::Vector2 size;
+};
+
+Text CreateText(tako::PixelArtDrawer* drawer, tako::Font* font, std::string_view text)
+{
+    auto bitmap = font->RenderText(text, 1);
+    auto texture = drawer->CreateTexture(bitmap);
+    return
+    {
+        texture,
+        tako::Vector2(bitmap.Width(), bitmap.Height())
+    };
+}
+
 struct Background {};
 struct Foreground {};
 struct Carrot
 {
     float health;
     float displayHealth;
+};
+
+enum GameState
+{
+    PressAny,
+    StartMenu,
+    Starting,
+    InGame,
+    EndScreen
 };
 
 struct Plant
@@ -78,19 +105,20 @@ struct Spawner
 class Game
 {
 public:
-    void Setup(tako::PixelArtDrawer* drawer)
-    {
-        m_font = new tako::Font("/charmap-cellphone.png", 5, 7, 1, 1, 2, 2, " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]\a_`abcdefghijklmnopqrstuvwxyz{|}~");
+    void Setup(tako::PixelArtDrawer* drawer) {
+        m_drawer = drawer;
         srand(time(NULL));
         drawer->SetTargetSize(240, 135);
         drawer->AutoScale();
         m_cameraSize = drawer->GetCameraViewSize();
-
+        m_font = new tako::Font("/charmap-cellphone.png", 5, 7, 1, 1, 2, 2,
+                                " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]\a_`abcdefghijklmnopqrstuvwxyz{|}~");
+        m_textPressAny = CreateText(drawer, m_font, "Press a button to start");
+        m_textTitle = CreateText(drawer, m_font, "Bunny Plague\n\nLorem ipsum dolor...");
         {
             auto bitmap = tako::Bitmap::FromFile("/Plant.png");
             auto plantTex = drawer->CreateTexture(bitmap);
-            for (int i = 0; i < m_plantStates.size(); i++)
-            {
+            for (int i = 0; i < m_plantStates.size(); i++) {
                 m_plantStates[i] = drawer->CreateSprite(plantTex, i * 16, 0, 16, 16);
             }
         }
@@ -123,11 +151,21 @@ public:
             auto carTex = drawer->CreateTexture(bitmap);
             m_carrot = drawer->CreateSprite(carTex, 0, 0, 16, 32);
         }
+        {
+            auto bitmap = tako::Bitmap::FromFile("/Player.png");
+            auto playerTex = drawer->CreateTexture(bitmap);
+            m_player = drawer->CreateSprite(playerTex, 0, 0, 12, 12);
+        }
         m_clipStep = new tako::AudioClip("/Step.wav");
         m_harvest = new tako::AudioClip("/Harvest.wav");
         m_clipEat = new tako::AudioClip("/Eat.wav");
         m_clipThrow = new tako::AudioClip("/Throw.wav");
         m_clipBroke = new tako::AudioClip("/Broke.wav");
+        m_clipMusic = new tako::AudioClip("/music.mp3");
+    }
+
+    void StartGame()
+    {
         std::map<char, std::function<void(int,int)>> levelCallbacks
         {{
             { 'p', [&](int x, int y)
@@ -144,9 +182,6 @@ public:
             }},
             { 'P', [&](int x, int y)
             {
-                auto bitmap = tako::Bitmap::FromFile("/Player.png");
-                auto playerTex = drawer->CreateTexture(bitmap);
-                m_player = drawer->CreateSprite(playerTex, 0, 0, 12, 12);
                 auto player = m_world.Create<Position, SpriteRenderer, RigidBody, Player, Foreground>();
                 Position& pos = m_world.GetComponent<Position>(player);
                 pos.x = x * 16 + 8;
@@ -190,7 +225,8 @@ public:
                 c.displayHealth = 0;
             }}
         }};
-        m_level = new Level("/Level.txt", drawer, levelCallbacks);
+        m_level = new Level("/Level.txt", m_drawer, levelCallbacks);
+        m_gameState = GameState::Starting;
     }
 
     void SpawnParticles(tako::Vector2 origin, int amount, float minX, float maxX, float minY, float maxY)
@@ -213,6 +249,35 @@ public:
 
     void Update(tako::Input* input, float dt)
     {
+        if (m_gameState == GameState::PressAny)
+        {
+            for (int i = 0; i < (int) tako::Key::Unknown; i++)
+            {
+                if (input->GetKeyDown((tako::Key) i))
+                {
+                    m_gameState = GameState::StartMenu;
+                    tako::Audio::Play(*m_clipMusic, true);
+                    break;
+                }
+            }
+            return;
+        }
+        if (m_gameState == GameState::StartMenu)
+        {
+            for (int i = 0; i < (int) tako::Key::Unknown; i++)
+            {
+                if (input->GetKeyDown((tako::Key) i))
+                {
+                    StartGame();
+                    break;
+                }
+            }
+            return;
+        }
+        if (m_gameState == GameState::Starting)
+        {
+            m_gameState = GameState::InGame;
+        }
         static std::vector<tako::Entity> toRemove;
         for (auto ent : toRemove)
         {
@@ -362,7 +427,6 @@ public:
                 tPos.y = tVec.y;
             }
         });
-
         m_world.IterateComps<Plant, SpriteRenderer>([&](Plant& plant, SpriteRenderer& sprite)
         {
             plant.growth += dt * plant.growthRate;
@@ -569,6 +633,24 @@ public:
         }
         m_cameraSize = drawer->GetCameraViewSize();
         drawer->Clear();
+
+        if (m_gameState == GameState::PressAny)
+        {
+            drawer->SetCameraPosition({0, 0});
+            drawer->DrawImage(-m_textPressAny.size.x/2, m_textPressAny.size.y/2, m_textPressAny.size.x, m_textPressAny.size.y, m_textPressAny.texture);
+            return;
+        }
+        if (m_gameState == GameState::StartMenu)
+        {
+            drawer->SetCameraPosition({0, 0});
+            drawer->DrawImage(-m_textTitle.size.x/2, m_textTitle.size.y/2, m_textTitle.size.x, m_textTitle.size.y, m_textTitle.texture);
+            return;
+        }
+        if (m_gameState == GameState::Starting)
+        {
+            return;
+        }
+
         drawer->SetCameraPosition(m_cameraPos);
         m_level->Draw(drawer);
         m_world.IterateComps<Position, RectangleRenderer>([&](Position& pos, RectangleRenderer& rect)
@@ -614,6 +696,7 @@ public:
         drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6 - offY, 28 * playerHunger / 100, 4, {255, 255, 255, 255});
     }
 private:
+    GameState m_gameState;
     tako::World m_world;
     tako::Vector2 m_cameraPos;
     tako::Vector2 m_cameraTarget;
@@ -635,11 +718,15 @@ private:
     tako::AudioClip* m_clipThrow;
     tako::AudioClip* m_clipBroke;
     tako::AudioClip* m_harvest;
+    tako::AudioClip* m_clipMusic;
     tako::Vector2 m_scoreSize;
     tako::Texture* m_scoreText = nullptr;
     tako::Font* m_font;
+    Text m_textPressAny;
+    Text m_textTitle;
     int m_bitmappedScore = -1;
     int m_score = 0;
     std::array<tako::Sprite*, 3> m_plantStates;
+    tako::PixelArtDrawer* m_drawer;
     Level* m_level;
 };
