@@ -22,7 +22,11 @@ tako::Vector2 FitMapBound(Rect bounds, tako::Vector2 cameraPos, tako::Vector2 ca
 }
 struct Background {};
 struct Foreground {};
-struct Carrot {};
+struct Carrot
+{
+    float health;
+    float displayHealth;
+};
 
 struct Plant
 {
@@ -94,6 +98,10 @@ public:
             m_turnip = drawer->CreateSprite(m_turnipUI, 0, 0, 8, 8);
         }
         {
+            auto bitmap = tako::Bitmap::FromFile("/Hearth.png");
+            m_hearthUI = drawer->CreateTexture(bitmap);
+        }
+        {
             auto bitmap = tako::Bitmap::FromFile("/Rabbit.png");
             auto tex = drawer->CreateTexture(bitmap);
             m_rabbit = drawer->CreateSprite(tex, 0, 0, 12, 12);
@@ -144,7 +152,8 @@ public:
                 rigid.size = { 12, 12 };
                 rigid.entity = player;
                 Player& pl = m_world.GetComponent<Player>(player);
-                pl.hunger = pl.displayedHunger = 100;
+                pl.hunger = 100;
+                pl.displayedHunger = 0;
                 pl.turnip = std::nullopt;
                 pl.lookDirection = 1;
                 pl.airTime = 0.0f;
@@ -170,6 +179,9 @@ public:
                 auto& rigid = m_world.GetComponent<RigidBody>(carrot);
                 rigid.entity = carrot;
                 rigid.size = { 16, 32 };
+                auto& c = m_world.GetComponent<Carrot>(carrot);
+                c.health = 100;
+                c.displayHealth = 0;
             }}
         }};
         m_level = new Level("/Level.txt", drawer, levelCallbacks);
@@ -418,6 +430,7 @@ public:
         m_world.IterateComps<Position, Carrot>([&](Position& position, Carrot& carrot)
         {
             carrotX = position.x;
+            carrot.displayHealth += (carrot.health - carrot.displayHealth) * dt * 3;
         });
 
         m_world.IterateComps<Position, RigidBody, Enemy, SpriteRenderer>([&](Position& position, RigidBody& rigid, Enemy& enemy, SpriteRenderer& sprite)
@@ -458,6 +471,8 @@ public:
                     {
                         destroyed = true;
                         toRemove.push_back(rigid.entity);
+                        auto& carrot = m_world.GetComponent<Carrot>(otherRigid.entity);
+                        carrot.health = std::max(0.0f, carrot.health - rand() * 1.0f / RAND_MAX * 10 - 15);
                     }
                 }
             );
@@ -550,16 +565,28 @@ public:
             drawer->DrawSprite(pos.x - sprite.size.x / 2, pos.y + sprite.size.y / 2, sprite.size.x, sprite.size.y, sprite.sprite);
         });
         drawer->SetCameraPosition(m_cameraSize/2);
+        float carrotHealth = 0;
+        for (auto [carrot] : m_world.Iter<Carrot>())
+        {
+            carrotHealth = carrot.displayHealth;
+            break;
+        }
+        drawer->DrawImage(4, m_cameraSize.y - 4, 8, 8, m_hearthUI);
+        drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4, 32, 8, {255, 255, 255, 255});
+        drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5, 30, 6, {0, 0, 0, 255});
+        drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6, 28 * carrotHealth / 100, 4, {255, 255, 255, 255});
+
         float playerHunger = 0;
         for (auto [player] : m_world.Iter<Player>())
         {
             playerHunger = player.displayedHunger;
             break;
         }
-        drawer->DrawImage(4, m_cameraSize.y - 4, 8, 8, m_turnipUI);
-        drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4, 32, 8, {255, 255, 255, 255});
-        drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5, 30, 6, {0, 0, 0, 255});
-        drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6, 28 * playerHunger / 100, 4, {255, 255, 255, 255});
+        constexpr auto offY = 10;
+        drawer->DrawImage(4, m_cameraSize.y - 4 - offY, 8, 8, m_turnipUI);
+        drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4 - offY, 32, 8, {255, 255, 255, 255});
+        drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5 - offY, 30, 6, {0, 0, 0, 255});
+        drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6 - offY, 28 * playerHunger / 100, 4, {255, 255, 255, 255});
     }
 private:
     tako::World m_world;
@@ -568,6 +595,7 @@ private:
     tako::Vector2 m_cameraSize;
     tako::Sprite* m_carrot;
     tako::Texture* m_turnipUI;
+    tako::Texture* m_hearthUI;
     tako::Sprite* m_turnip;
     tako::Sprite* m_player;
     tako::Sprite* m_rabbit;
