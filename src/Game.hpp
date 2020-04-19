@@ -744,6 +744,8 @@ public:
         {
             drawer->SetCameraPosition(m_cameraSize/2);
             drawer->DrawImage((m_cameraSize.x - m_textTitle.size.x * 2 ) / 2, m_cameraSize.y - 16, m_textTitle.size.x * 2, m_textTitle.size.y * 2, m_textTitle.texture);
+            drawer->DrawSprite((m_cameraSize.x - m_textTitle.size.x * 2 ) / 2 - 4 - 12, m_cameraSize.y - 16, 12, 12, m_rabbit);
+            drawer->DrawImage(m_cameraSize.x - (m_cameraSize.x - m_textTitle.size.x * 2 ) / 2 + 2 + 4, m_cameraSize.y - 18, 12, 12, m_turnipUI);
             drawer->DrawImage(4, m_textCredits.size.y + 4, m_textCredits.size.x, m_textCredits.size.y, m_textCredits.texture);
             drawer->SetCameraPosition({0, 0});
             drawer->DrawImage(-m_textControls.size.x/2, m_textControls.size.y/2, m_textControls.size.x, m_textControls.size.y, m_textControls.texture);
