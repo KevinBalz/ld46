@@ -22,6 +22,7 @@ tako::Vector2 FitMapBound(Rect bounds, tako::Vector2 cameraPos, tako::Vector2 ca
 }
 struct Background {};
 struct Foreground {};
+struct Carrot {};
 
 struct Plant
 {
@@ -54,6 +55,7 @@ struct Enemy
 {
     tako::Vector2 speed;
     float groundTime;
+    float direction;
 };
 
 struct DeadEnemy
@@ -97,6 +99,15 @@ public:
             m_rabbit = drawer->CreateSprite(tex, 0, 0, 12, 12);
             m_rabbitJump = drawer->CreateSprite(tex, 12, 0, 12, 12);
             m_rabbitDead = drawer->CreateSprite(tex, 24, 0, 12, 12);
+            //Hack of the year
+            m_rabbitR = drawer->CreateSprite(tex, 12, 0, -12, 12);
+            m_rabbitJumpR = drawer->CreateSprite(tex, 24, 0, -12, 12);
+            m_rabbitDeadR = drawer->CreateSprite(tex, 36, 0, -12, 12);
+        }
+        {
+            auto bitmap = tako::Bitmap::FromFile("/Carrot.png");
+            auto carTex = drawer->CreateTexture(bitmap);
+            m_carrot = drawer->CreateSprite(carTex, 0, 0, 16, 32);
         }
         m_clipStep = new tako::AudioClip("/Step.wav");
         m_harvest = new tako::AudioClip("/Harvest.wav");
@@ -146,23 +157,22 @@ public:
                 sp.x = x;
                 sp.y = y;
                 sp.duration = 0;
+            }},
+            { 'C', [&](int x, int y)
+            {
+                auto carrot = m_world.Create<Position, SpriteRenderer, Background, Carrot, RigidBody>();
+                Position& pos = m_world.GetComponent<Position>(carrot);
+                pos.x = x * 16 + 8;
+                pos.y = y * 16 + 16;
+                SpriteRenderer& renderer = m_world.GetComponent<SpriteRenderer>(carrot);
+                renderer.size = { 16, 32};
+                renderer.sprite = m_carrot;
+                auto& rigid = m_world.GetComponent<RigidBody>(carrot);
+                rigid.entity = carrot;
+                rigid.size = { 16, 32 };
             }}
         }};
         m_level = new Level("/Level.txt", drawer, levelCallbacks);
-
-        //Create Carrot
-        {
-            auto bitmap = tako::Bitmap::FromFile("/Carrot.png");
-            auto carTex = drawer->CreateTexture(bitmap);
-            auto m_carrot = drawer->CreateSprite(carTex, 0, 0, 16, 32);
-            auto carrot = m_world.Create<Position, SpriteRenderer, Background>();
-            Position& pos = m_world.GetComponent<Position>(carrot);
-            pos.x = 16 * 5 + 8;
-            pos.y = 3 * 16;
-            SpriteRenderer& renderer = m_world.GetComponent<SpriteRenderer>(carrot);
-            renderer.size = { 16, 32};
-            renderer.sprite = m_carrot;
-        }
     }
 
     void SpawnParticles(tako::Vector2 origin, int amount, float minX, float maxX, float minY, float maxY)
@@ -390,10 +400,11 @@ public:
             if (killed)
             {
                 auto toKill = killed.value();
-                auto speed = m_world.GetComponent<Enemy>(toKill).speed;
+                auto enm = m_world.GetComponent<Enemy>(toKill);
+                auto speed = enm.speed;
                 m_world.RemoveComponent<Enemy>(toKill);
                 m_world.RemoveComponent<RigidBody>(toKill);
-                m_world.GetComponent<SpriteRenderer>(toKill).sprite = m_rabbitDead;
+                m_world.GetComponent<SpriteRenderer>(toKill).sprite = enm.direction > 0 ? m_rabbitDead : m_rabbitDeadR;
                 m_world.AddComponent<DeadEnemy>(toKill);
                 m_world.AddComponent<Background>(toKill);
                 m_world.RemoveComponent<Foreground>(toKill);
@@ -403,12 +414,18 @@ public:
             }
         });
 
+        float carrotX;
+        m_world.IterateComps<Position, Carrot>([&](Position& position, Carrot& carrot)
+        {
+            carrotX = position.x;
+        });
+
         m_world.IterateComps<Position, RigidBody, Enemy, SpriteRenderer>([&](Position& position, RigidBody& rigid, Enemy& enemy, SpriteRenderer& sprite)
         {
             auto grounded = Physics::IsGrounded(m_level, position, rigid);
             if (grounded)
             {
-                sprite.sprite = m_rabbit;
+                sprite.sprite = enemy.direction > 0 ? m_rabbit : m_rabbitR;
                 if (enemy.groundTime == 0)
                 {
                     SpawnParticles(position.AsVec() - tako::Vector2(0.0f, rigid.size.y / 2), 5, -7, 7, 40, 60);
@@ -418,20 +435,32 @@ public:
                 if (enemy.groundTime > 2)
                 {
                     Physics::Move(m_world, m_level, position, rigid, {0, 0.5f });
-                    enemy.speed = { 30, rand() % 20 + 20.0f };
+                    enemy.speed = { 30 * tako::mathf::sign(carrotX - position.x), rand() % 20 + 20.0f };
+                    enemy.direction = tako::mathf::sign(enemy.speed.x);
                     auto speedSign = -tako::mathf::sign(enemy.speed.x);
                     enemy.groundTime = 0;
                     SpawnParticles(position.AsVec() - tako::Vector2(0.0f, rigid.size.y / 2), 5, 5 * speedSign, 10 * speedSign, 10, 30);
+                    sprite.sprite = enemy.direction > 0 ? m_rabbitJump : m_rabbitJumpR;
                 }
             }
             else
             {
-                sprite.sprite = m_rabbitJump;
+                sprite.sprite = enemy.direction > 0 ? m_rabbitJump : m_rabbitJumpR;
                 enemy.groundTime = 0;
                 enemy.speed.y -= dt * 20;
             }
 
-            Physics::Move(m_world, m_level, position, rigid, enemy.speed * dt);
+            auto destroyed = false;
+            Physics::Move(m_world, m_level, position, rigid, enemy.speed * dt, {},
+                [&](auto& otherRigid, auto& movement)
+                {
+                    if (!destroyed && m_world.HasComponent<Carrot>(otherRigid.entity))
+                    {
+                        destroyed = true;
+                        toRemove.push_back(rigid.entity);
+                    }
+                }
+            );
         });
 
         m_world.IterateComps<Position, DeadEnemy>([&](Position& pos, DeadEnemy& enm)
@@ -489,13 +518,17 @@ public:
         pos.y = y * 16 + 8;
         auto& renderer = m_world.GetComponent<SpriteRenderer>(enemy);
         renderer.size = { 12, 12};
-        renderer.sprite = m_rabbit;
         auto& rigid = m_world.GetComponent<RigidBody>(enemy);
         rigid.size = { 12, 12 };
         rigid.entity = enemy;
         auto& en = m_world.GetComponent<Enemy>(enemy);
         en.speed = {0, 0};
         en.groundTime = 0;
+        m_world.IterateComps<Position, Carrot>([&](Position& cPos, Carrot& c)
+        {
+            en.direction = cPos.x < pos.x ? -1 : 1;
+            renderer.sprite = en.direction > 0 ? m_rabbitJump : m_rabbitJumpR;
+        });
     }
 
     void Draw(tako::PixelArtDrawer* drawer)
@@ -540,6 +573,9 @@ private:
     tako::Sprite* m_rabbit;
     tako::Sprite* m_rabbitJump;
     tako::Sprite* m_rabbitDead;
+    tako::Sprite* m_rabbitR;
+    tako::Sprite* m_rabbitJumpR;
+    tako::Sprite* m_rabbitDeadR;
     tako::AudioClip* m_clipStep;
     tako::AudioClip* m_clipEat;
     tako::AudioClip* m_clipThrow;
