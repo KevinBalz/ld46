@@ -43,6 +43,11 @@ struct Particle
     tako::Vector2 speed;
 };
 
+struct Turnip
+{
+    tako::Vector2 speed;
+};
+
 class Game
 {
 public:
@@ -64,9 +69,13 @@ public:
         {
             auto bitmap = tako::Bitmap::FromFile("/TurnipUI.png");
             m_turnipUI = drawer->CreateTexture(bitmap);
+            m_turnip = drawer->CreateSprite(m_turnipUI, 0, 0, 8, 8);
         }
         m_clipStep = new tako::AudioClip("/Step.wav");
         m_harvest = new tako::AudioClip("/Harvest.wav");
+        m_clipEat = new tako::AudioClip("/Eat.wav");
+        m_clipThrow = new tako::AudioClip("/Throw.wav");
+        m_clipBroke = new tako::AudioClip("/Broke.wav");
         std::map<char, std::function<void(int,int)>> levelCallbacks
         {{
             { 'p', [&](int x, int y)
@@ -98,8 +107,11 @@ public:
             renderer.sprite = m_player;
             RigidBody& rigid = m_world.GetComponent<RigidBody>(player);
             rigid.size = { 12, 12 };
+            rigid.entity = player;
             Player& pl = m_world.GetComponent<Player>(player);
             pl.hunger = pl.displayedHunger = 100;
+            pl.turnip = std::nullopt;
+            pl.lookDirection = 1;
         }
 
         //Create Carrot
@@ -176,6 +188,7 @@ public:
             }
             if (tako::mathf::abs(moveX) > 0)
             {
+                player.lookDirection = tako::mathf::sign(moveX);
                 static float spawnInterval = 0.6f;
                 player.walkingPart += dt;
                 if (tako::mathf::abs(player.walkingPart) > spawnInterval)
@@ -199,17 +212,22 @@ public:
             {
                 moveY += speed;
             }
-            if (input->GetKeyDown(tako::Key::Space))
+            bool hadTurnip = player.turnip.has_value();
+            bool throwPressed = input->GetKeyDown(tako::Key::Space);
+            bool eatPressed = input->GetKeyDown(tako::Key::Down);
+            if (!hadTurnip && (throwPressed || eatPressed))
             {
                 Plant* pickup = nullptr;
                 float minDistance = 999999999;
                 tako::Vector2 pickupPos;
                 Rect p(pos.AsVec(), rigid.size);
-                for (auto [pos, plant] : m_world.Iter<Position, Plant>())
+                m_world.IterateHandle<Position, Plant>([&](tako::EntityHandle handle)
                 {
+                    auto& pos = m_world.GetComponent<Position>(handle.id);
+                    auto& plant = m_world.GetComponent<Plant>(handle.id);
                     if (plant.growth < 10)
                     {
-                        continue;
+                        return;
                     }
                     Rect pl(pos.AsVec(), { 16, 16});
                     if (Rect::Overlap(p, pl))
@@ -222,18 +240,56 @@ public:
                             pickupPos = pl.Position();
                         }
                     }
-                }
+                });
                 if (pickup)
                 {
                     pickup->Reset();
                     tako::Audio::Play(*m_harvest);
                     SpawnParticles({pickupPos.x, pickupPos.y - 3}, 5, -15, 15, 5, 40);
-                    player.hunger = std::min(100.0f, player.hunger + 10);
-                    SpawnParticles(pos.AsVec(), 5, -10, 10, 5, 10);
+                    auto turnip = m_world.Create<Position, SpriteRenderer>();
+                    auto& tPos = m_world.GetComponent<Position>(turnip);
+                    tPos.x = pickupPos.x;
+                    tPos.y = pickupPos.y;
+                    auto& tRen = m_world.GetComponent<SpriteRenderer>(turnip);
+                    tRen.size = {8, 8};
+                    tRen.sprite = m_turnip;
+                    player.turnip = turnip;
                 }
+            }
+            if (hadTurnip && throwPressed)
+            {
+                auto turnip = player.turnip.value();
+                m_world.AddComponent<RigidBody>(turnip);
+                auto& tBody = m_world.GetComponent<RigidBody>(turnip);
+                tBody.size = { 8, 8 };
+                tBody.entity = turnip;
+                m_world.AddComponent<Turnip>(turnip);
+                auto& tTur = m_world.GetComponent<Turnip>(turnip);
+                tTur.speed = { 90 * player.lookDirection, 20 };
+                tako::Audio::Play(*m_clipThrow);
+                player.turnip = std::nullopt;
+            }
+            if (hadTurnip && eatPressed)
+            {
+                auto turnip = player.turnip.value();
+                player.hunger = std::min(100.0f, player.hunger + 10);
+                SpawnParticles(m_world.GetComponent<Position>(turnip).AsVec(), 5, -10, 10, 5, 10);
+                toRemove.push_back(turnip);
+                tako::Audio::Play(*m_clipEat);
+                player.turnip = std::nullopt;
             }
 
             Physics::Move(m_world, m_level, pos, rigid, tako::Vector2(moveX, moveY) * dt);
+            if (player.turnip.has_value())
+            {
+                auto turnip = player.turnip.value();
+                auto& tPos = m_world.GetComponent<Position>(turnip);
+                auto tVec = tPos.AsVec();
+                auto target = pos.AsVec() + tako::Vector2(0, 4 + 8.0f/2);
+                tVec += (target - tVec) * std::min(1.0f, dt * 30);
+                tPos.x = tVec.x;
+                tPos.y = tVec.y;
+            }
         });
 
         m_world.IterateComps<Plant, SpriteRenderer>([&](Plant& plant, SpriteRenderer& sprite)
@@ -254,7 +310,36 @@ public:
 
         });
 
-        //Physics::Step(m_world, m_level, dt);
+        m_world.IterateComps<Position, Turnip, RigidBody>([&](Position& position, Turnip& turnip, RigidBody& rigid)
+        {
+            turnip.speed.y += dt * -30;
+            bool deleted = false;
+            Physics::Move(m_world, m_level, position, rigid, turnip.speed * dt,
+                [&]()
+                {
+                    if (!deleted)
+                    {
+                        toRemove.push_back(rigid.entity);
+                        tako::Audio::Play(*m_clipBroke);
+                        deleted = true;
+                    }
+                },
+                [&](auto& otherRigid, auto& movement)
+                {
+                    if (!deleted && !m_world.HasComponent<Player>(otherRigid.entity))
+                    {
+                        toRemove.push_back(rigid.entity);
+                        tako::Audio::Play(*m_clipBroke);
+                        deleted = true;
+                    }
+                }
+            );
+            if (deleted)
+            {
+                SpawnParticles(position.AsVec(), 8, turnip.speed.x * 0.5f, turnip.speed.x * 2, turnip.speed.y * 0.5f, turnip.speed.y * 2);
+            }
+        });
+
         m_world.IterateComps<Position, Particle>([&](Position& pos, Particle& part)
         {
             auto target = pos.AsVec() + part.speed * dt;
@@ -300,7 +385,6 @@ public:
             break;
         }
         drawer->DrawImage(4, m_cameraSize.y - 4, 8, 8, m_turnipUI);
-        //drawer->DrawRectangle(4, m_cameraSize.y - 4, 8, 8, {255, 255, 255, 255});
         drawer->DrawRectangle(4 + 10, m_cameraSize.y - 4, 32, 8, {255, 255, 255, 255});
         drawer->DrawRectangle(5 + 10, m_cameraSize.y - 5, 30, 6, {0, 0, 0, 255});
         drawer->DrawRectangle(6 + 10, m_cameraSize.y - 6, 28 * playerHunger / 100, 4, {255, 255, 255, 255});
@@ -312,8 +396,12 @@ private:
     tako::Vector2 m_cameraSize;
     tako::Sprite* m_carrot;
     tako::Texture* m_turnipUI;
+    tako::Sprite* m_turnip;
     tako::Sprite* m_player;
     tako::AudioClip* m_clipStep;
+    tako::AudioClip* m_clipEat;
+    tako::AudioClip* m_clipThrow;
+    tako::AudioClip* m_clipBroke;
     tako::AudioClip* m_harvest;
     std::array<tako::Sprite*, 3> m_plantStates;
     Level* m_level;

@@ -8,6 +8,7 @@
 struct RigidBody
 {
     tako::Vector2 size;
+    tako::Entity entity;
 };
 
 namespace Physics
@@ -18,20 +19,43 @@ namespace Physics
         return level->Overlap(n).has_value();
     }
 
-    void Move(tako::World& world, Level* level, Position& pos, RigidBody& rigid, tako::Vector2 movement)
+    void Move(tako::World& world, Level* level, Position& pos, RigidBody& rigid, tako::Vector2 movement, std::function<void()> levelCallback = {}, std::function<void(RigidBody&, tako::Vector2&)> rigidCallback = {})
     {
         Rect n;
-        while (tako::mathf::abs(movement.x) > 0.0000001f || tako::mathf::abs(movement.y) > 0.0000001f)
+        int iterations = 0;
+        while ((tako::mathf::abs(movement.x) > 0.0000001f || tako::mathf::abs(movement.y) > 0.0000001f) && iterations < 10)
         {
+            iterations++;
             auto mov = movement;
             if (movement.magnitude() > 1)
             {
                 mov.normalize();
             }
             n = {pos.AsVec() + mov, rigid.size};
+            if (rigidCallback)
+            {
+                world.IterateComps<Position, RigidBody>([&](Position& otherPos, RigidBody& otherRigid)
+                {
+                    if (&rigid == &otherRigid)
+                    {
+                        return;
+                    }
+                    Rect otherN(otherPos.AsVec(), otherRigid.size);
+                    if (Rect::Overlap(n, otherN))
+                    {
+                        rigidCallback(otherRigid, movement);
+                    }
+                });
+            }
+
             auto overlap = level->Overlap(n);
             if (overlap)
             {
+                if (levelCallback)
+                {
+                    levelCallback();
+                    levelCallback = {};
+                }
                 auto other = overlap.value();
                 Rect ny(pos.AsVec() + tako::Vector2(0, mov.y), rigid.size);
                 if (Rect::Overlap(other, ny))
@@ -68,20 +92,5 @@ namespace Physics
             pos.y += mov.y;
             movement -= mov;
         }
-    }
-    void Step(tako::World& world, Level* level, float dt)
-    {
-        world.IterateComps<Position, RigidBody>([&](Position& pos, RigidBody& rigid)
-        {
-            Rect n(pos.x, pos.y, rigid.size.x, rigid.size.y);
-            n.y -= dt * 8;
-            if (level->Overlap(n))
-            {
-                return;
-            }
-            pos.x = n.x;
-            pos.y = n.y;
-            //pos.y = std::max(rigid.size.y/2, pos.y);
-        });
     }
 }
